@@ -7,11 +7,13 @@
 # Contact at parisi.robin@gmail.com
 # Github https://github.com/robinparisi/ssh-manager
 # github.io Page https://robinparisi.github.io/ssh-manager/
-
+####################################################
+# Modified by Stephen Foy
+# for Nvidia server mointoring using shh nvidia-smi
 #================== Globals ==================================================
 
 # Version
-VERSION="0.6"
+VERSION="0.6.1"
 
 # Configuration
 HOST_FILE="$HOME/.ssh_servers"
@@ -47,6 +49,41 @@ function test_host() {
 		cecho -n -green "UP"
 		echo -n "]"
 	fi 
+}
+
+function test_hostGPU() {
+
+	#x=ssh ${1}@${2} nvidia-smi --query-gpu="memory.free" --format=csv  | grep MiB | grep -v memory | awk -F' ' '{print $1}'
+  	#x=ssh ${1}@${2} nvidia-smi --query-gpu="memory.free,memory.used'" --format=csv  | grep MiB | grep -v memory | awk -F' ' '{print $1}'
+	#x=ssh ${1}@${2} nvidia-smi --query-gpu="name,memory.free,memory.used,memory.total" --format=csv,noheader,no,units | awk -F', ' '{print $1}'
+	#x=$(ssh ${1}@${2} nvidia-smi --query-gpu="memory.free" --format=csv,noheader,nounits)
+	
+	max_idx=0
+	max_mem=0
+	idx=0
+	{
+	  read _;                         # discard first line (header)
+	  while read -r mem _; do         # for each subsequent line, read first word into mem
+	    if (( mem > max_mem )); then  # compare against maximum mem value seen
+	      max_mem=$mem                # ...if greater, then update both that max value
+	      max_idx=$idx                # ...and our stored index value.
+	    fi
+	    ((++idx))
+	  done
+	}< <(ssh -n ${1}@${2} nvidia-smi --query-gpu=memory.free --format=csv)
+
+	#echo "Maximum memory seen is $max_mem, at processor $idx"
+
+	if [ $max_mem -gt 10000 ]; then
+	echo -n "["
+	cecho -n -green "GPU $idx Free ${max_mem}MB"
+	echo -n "]"
+	else
+	echo -n "["
+	cecho -n -red "GPU $idx Free ${max_mem}MB"
+	echo -n "]"
+	fi 
+	
 }
 
 function separator() {
@@ -143,22 +180,24 @@ if [ $# -eq 0 ]; then
 	separator 
 	echo "List of availables servers for user $(whoami) "
 	separator
-	while IFS=: read label user ip port         
-	do    
-	test_host $ip
-	echo -ne "\t"
-	cecho -n -blue $label
-	echo -ne ' ==> '
-	cecho -n -red $user 
-	cecho -n -yellow "@"
-	cecho -n -white $ip
-	echo -ne ' -> '
-	if [ "$port" == "" ]; then
-		port=$SSH_DEFAULT_PORT
-	fi
-	cecho -yellow $port
-	echo
-done < $HOST_FILE
+	while IFS=: read -r label user ip port; 
+	do
+		test_hostGPU $user $ip
+		#echo -ne "\t"¬
+		#test_host $ip
+		echo -ne "\t"
+		cecho -n -blue $label
+		echo -ne ' ==> '
+		cecho -n -red $user 
+		cecho -n -yellow "@"
+		cecho -n -white $ip
+		echo -ne ' -> '
+		if [ "$port" == "" ]; then
+			port=$SSH_DEFAULT_PORT
+		fi
+		cecho -yellow $port'\n'
+		
+	done < $HOST_FILE
 
 list_commands
 
